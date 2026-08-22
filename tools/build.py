@@ -131,7 +131,7 @@ def build():
     run([AAPT2, "link", "-o", OUT / "unsigned.apk", "-I", AJAR,
          "--manifest", APP / "AndroidManifest.xml", "-A", APP / "assets",
          "--min-sdk-version", "25", "--target-sdk-version", "25",
-         "--version-code", "2", "--version-name", "2.0"])
+         "--version-code", "1", "--version-name", "1.0"])
 
     print("[5/7] 注入 classes.dex")
     run([sys.executable, ROOT / "tools" / "add_dex.py",
