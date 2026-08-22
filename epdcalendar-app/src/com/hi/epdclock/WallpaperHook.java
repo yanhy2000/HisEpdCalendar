@@ -145,35 +145,39 @@ public class WallpaperHook extends XC_MethodReplacement {
         p.setColor(0xFFFFFFFF);
         canvas.drawRect(448f, 1288f, 595f, 1332f, p);
 
-        // "N%" 20px 粗体，右对齐横屏 x=938
+        // "N%" 20px 粗体，右对齐 rx=594（横屏 940，擦除区右缘 595 内留 4px）；
+        // 三位数（100%）过宽时把电池图标组（电极头/轮廓/电量条/闪电）整体左移，
+        // 保持 12px 固定间距不重叠
         p.setColor(INK);
         p.setTextSize(20f);
         p.setTypeface(Typeface.DEFAULT_BOLD);
         String pct = level + "%";
-        canvas.drawText(pct, 589f - p.measureText(pct), 1313f, p);
+        float textLeft = 594f - p.measureText(pct);
+        float shift = Math.max(0f, 549f + 12f - textLeft);
+        canvas.drawText(pct, textLeft, 1313f, p);
 
         // 电池轮廓 STROKE 2.5（横屏 858..892 × 502..518）
         p.setStyle(Paint.Style.STROKE);
         p.setStrokeWidth(2.5f);
-        canvas.drawRect(509f, 1298f, 543f, 1314f, p);
+        canvas.drawRect(509f - shift, 1298f, 543f - shift, 1314f, p);
 
         // 回 FILL：电极头（横屏 892..898 × 506..514）
         p.setStyle(Paint.Style.FILL);
-        canvas.drawRect(543f, 1302f, 549f, 1310f, p);
+        canvas.drawRect(543f - shift, 1302f, 549f - shift, 1310f, p);
 
         // 电量填充条（内区横屏 861..889 × 504..516，宽 28*lvl/100，整型运算与旧 smali 一致）
         float w = 28 * level / 100;
-        canvas.drawRect(512f, 1300f, 512f + w, 1312f, p);
+        canvas.drawRect(512f - shift, 1300f, 512f - shift + w, 1312f, p);
 
         // 充电：电池左侧闪电（横屏 837..849 × 500..520 的六边形折线）
         if (charging) {
             Path bolt = new Path();
-            bolt.moveTo(496f, 1296f);
-            bolt.lineTo(488f, 1307f);
-            bolt.lineTo(493f, 1307f);
-            bolt.lineTo(490f, 1316f);
-            bolt.lineTo(500f, 1304f);
-            bolt.lineTo(495f, 1304f);
+            bolt.moveTo(496f - shift, 1296f);
+            bolt.lineTo(488f - shift, 1307f);
+            bolt.lineTo(493f - shift, 1307f);
+            bolt.lineTo(490f - shift, 1316f);
+            bolt.lineTo(500f - shift, 1304f);
+            bolt.lineTo(495f - shift, 1304f);
             bolt.close();
             canvas.drawPath(bolt, p);
         }

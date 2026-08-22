@@ -131,7 +131,9 @@ def build():
     run([AAPT2, "link", "-o", OUT / "unsigned.apk", "-I", AJAR,
          "--manifest", APP / "AndroidManifest.xml", "-A", APP / "assets",
          "--min-sdk-version", "25", "--target-sdk-version", "25",
-         "--version-code", "1", "--version-name", "1.0"])
+         # versionCode 与 versionName 解耦：1.0 → 100（内部码单调递增即可，
+         # 避免跨版本线部署时触发 INSTALL_FAILED_VERSION_DOWNGRADE）
+         "--version-code", "100", "--version-name", "1.0"])
 
     print("[5/7] 注入 classes.dex")
     run([sys.executable, ROOT / "tools" / "add_dex.py",
@@ -147,7 +149,7 @@ def build():
 
 
 def install():
-    run(["adb", "install", "-r", OUT / "epdcalendar-signed.apk"])
+    run(["adb", "install", "-r", "-d", OUT / "epdcalendar-signed.apk"])  # -d 允许降级（换版本线时）
     # 本机 ROM 的 install -r 会清运行时权限，装完必须补授
     adb_shell(f"pm grant {PKG} android.permission.WRITE_EXTERNAL_STORAGE")
     adb_shell(f"dumpsys deviceidle whitelist +{PKG}")

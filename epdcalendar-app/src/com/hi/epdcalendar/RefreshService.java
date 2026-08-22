@@ -3,53 +3,41 @@ package com.hi.epdcalendar;
 import android.app.Service;
 import android.content.Intent;
 import android.graphics.Bitmap;
-import android.graphics.Canvas;
 import android.graphics.Matrix;
-import android.net.ConnectivityManager;
-import android.net.NetworkInfo;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
 import android.util.Log;
-import android.view.ViewGroup;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
+
+import org.json.JSONObject;
 
 /**
  * 刷新流水线（工作线程执行，WebView 部分跳回主线程）：
- *   确保WiFi开启 → 等待联网 → GET /api/data(X-API-Key)
+ *   自愈引擎设置 → 网络策略（已联网直接用；否则按模式开 WiFi/流量，用完还原）
+ *   → 本地数据组装（高德天气直连+缓存 / 一言 / lunar-java 农历）
  *   → WebView 渲染横版模板(960x540 CSS @2x → 1920x1080)
  *   → 顺时针旋转90° → 1080x1920 PNG 原子写入 /sdcard/eink_clock/
- *   → 恢复WiFi原状态 → 布防下一轮闹钟
+ *   → 还原网络现场 → 布防下一轮闹钟（自动刷新开启时）
  * 原厂锁屏引擎每分钟会重新读这张 PNG 上屏，无需主动通知。
  */
 public class RefreshService extends Service {
     private static final String TAG = "EpdCal";
     static final String RENDER_INPUT = "render_input.json";
-    private static final int NET_WAIT_MS = 45000;
     private static final int LAND_W = 1920, LAND_H = 1080; // 横版渲染物理像素
 
     private static final AtomicBoolean sRunning = new AtomicBoolean(false);
 
     private Handler main;
     private PowerManager.WakeLock wl;
-    private volatile boolean wifiWasOn;
 
     @Override
     public void onCreate() {
@@ -91,32 +79,20 @@ public class RefreshService extends Service {
     private void runPipeline(boolean manual) {
         boolean ok = false;
         String msg = "";
+        NetPolicy.Session net = null;
         try {
-            String server = Config.server(this);
-            if (server.isEmpty()) throw new IllegalStateException("未配置服务器地址");
-            while (server.endsWith("/")) server = server.substring(0, server.length() - 1);
-
             // 自愈：ROM 偶发清空锁屏时钟设置会让引擎空转（画面冻结但闹钟仍在跳）
             Su.assertEngineSettings();
 
-            // 1. WiFi：平时关闭，刷新期间开启；原本就开着则刷新后不动它
-            android.net.wifi.WifiManager wm =
-                    (android.net.wifi.WifiManager) getApplicationContext()
-                            .getSystemService(WIFI_SERVICE);
-            wifiWasOn = wm.isWifiEnabled();
-            if (!wifiWasOn) {
-                Log.i(TAG, "开启WiFi等待联网…");
-                wm.setWifiEnabled(true);
-            }
-            if (!waitNetwork()) {
-                throw new IllegalStateException("等待联网超时(" + (NET_WAIT_MS / 1000) + "s)");
-            }
+            // 1. 网络：已联网直接用（不动用户开关）；否则按模式按需开启（用完还原）
+            net = NetPolicy.ensureNetwork(this);
             Log.i(TAG, "网络就绪");
 
-            // 2. 取原始数据（刚联网时 DNS 可能尚未就绪，带退避重试）
+            // 2. 本地数据组装（天气/一言需联网；农历全本地）
             long t0 = System.currentTimeMillis();
-            String json = httpGetWithRetry(server + "/api/data", Config.token(this), 3);
-            Log.i(TAG, "数据获取完成 " + json.length() + "B，耗时 "
+            JSONObject data = DataProvider.build(this);
+            String json = data.toString();
+            Log.i(TAG, "数据组装完成 " + json.length() + "B，耗时 "
                     + (System.currentTimeMillis() - t0) + "ms");
             writeInternal("last_data.json", json);
 
@@ -133,80 +109,23 @@ public class RefreshService extends Service {
             Log.e(TAG, "刷新失败", tr);
             msg = String.valueOf(tr);
         } finally {
-            // 5. 恢复WiFi、记录结果、布防下一轮
+            // 5. 还原网络现场、记录结果、布防下一轮
             try {
-                android.net.wifi.WifiManager wm =
-                        (android.net.wifi.WifiManager) getApplicationContext()
-                                .getSystemService(WIFI_SERVICE);
-                if (!wifiWasOn && wm.isWifiEnabled()) {
-                    wm.setWifiEnabled(false);
-                    Log.i(TAG, "刷新结束，已关闭WiFi");
-                }
+                NetPolicy.restore(this, net);
             } catch (Throwable tr) {
-                Log.w(TAG, "关闭WiFi失败: " + tr);
+                Log.w(TAG, "网络还原失败: " + tr);
             }
             Config.recordResult(this, ok, msg);
-            ScheduleLogic.armNext(this);
-            if (wl != null && wl.isHeld()) wl.release();
+            if (Config.autoRefresh(this)) {
+                ScheduleLogic.armNext(this);
+            } else if (!manual) {
+                Log.i(TAG, "自动刷新已关闭，不布防下一轮");
+            }
+            if (wl != null && wl.isHeld()) {
+                wl.release();
+            }
             stopSelf();
         }
-    }
-
-    /** 轮询等待任意网络连通（WiFi 关联即可，无需访问外网能力校验） */
-    private boolean waitNetwork() {
-        ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
-        long deadline = System.currentTimeMillis() + NET_WAIT_MS;
-        while (System.currentTimeMillis() < deadline) {
-            NetworkInfo ni = cm.getActiveNetworkInfo();
-            if (ni != null && ni.isConnected()) return true;
-            try { Thread.sleep(500); } catch (InterruptedException e) { return false; }
-        }
-        return false;
-    }
-
-    /** WiFi 刚关联时 DNS 可能尚未就绪（UnknownHostException 竞态），失败后退避重试 */
-    private String httpGetWithRetry(String urlStr, String token, int attempts) throws Exception {
-        Exception last = null;
-        for (int i = 1; i <= attempts; i++) {
-            try {
-                return httpGet(urlStr, token);
-            } catch (Exception e) {
-                last = e;
-                if (i < attempts) {
-                    Log.w(TAG, "取数失败(第" + i + "/" + attempts + "次)，3s后重试: " + e);
-                    Thread.sleep(3000);
-                }
-            }
-        }
-        throw last;
-    }
-
-    private String httpGet(String urlStr, String token) throws Exception {
-        HttpURLConnection conn = null;
-        try {
-            URL url = new URL(urlStr);
-            conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(10000);
-            conn.setReadTimeout(20000);
-            conn.setRequestProperty("X-API-Key", token);
-            int code = conn.getResponseCode();
-            InputStream in = code == 200 ? conn.getInputStream() : conn.getErrorStream();
-            String body = readAll(in);
-            if (code != 200) throw new IllegalStateException("HTTP " + code + ": " + body);
-            return body;
-        } finally {
-            if (conn != null) conn.disconnect();
-        }
-    }
-
-    private static String readAll(InputStream in) throws Exception {
-        InputStreamReader r = new InputStreamReader(in, "UTF-8");
-        StringBuilder sb = new StringBuilder();
-        char[] buf = new char[8192];
-        int n;
-        while ((n = r.read(buf)) > 0) sb.append(buf, 0, n);
-        r.close();
-        return sb.toString();
     }
 
     // ======================== 渲染（经 RenderActivity 宿主） ========================
@@ -222,14 +141,20 @@ public class RefreshService extends Service {
             throw new IllegalStateException("渲染宿主超时未返回");
         }
         String err = RenderActivity.takeError();
-        if (err != null) throw new IllegalStateException("渲染失败: " + err);
+        if (err != null) {
+            throw new IllegalStateException("渲染失败: " + err);
+        }
         Bitmap land = RenderActivity.takeResult();
-        if (land == null) throw new IllegalStateException("渲染失败: 无输出");
+        if (land == null) {
+            throw new IllegalStateException("渲染失败: 无输出");
+        }
 
         Matrix m = new Matrix();
         m.postRotate(90); // 顺时针，与 PC 端 PIL ROTATE_270 等价 → 1080x1920 竖版
         Bitmap portrait = Bitmap.createBitmap(land, 0, 0, LAND_W, LAND_H, m, true);
-        if (portrait != land) land.recycle();
+        if (portrait != land) {
+            land.recycle();
+        }
         Log.i(TAG, "渲染完成 " + portrait.getWidth() + "x" + portrait.getHeight());
         return portrait;
     }
@@ -243,7 +168,9 @@ public class RefreshService extends Service {
         String inject = "<script>window.INKSYNC_DATA = " + json + ";</script>"
                 + buildIconData(ctx, json);
         int head = tpl.indexOf("<head>");
-        if (head < 0) throw new IllegalStateException("模板缺少<head>");
+        if (head < 0) {
+            throw new IllegalStateException("模板缺少<head>");
+        }
         return tpl.substring(0, head + 6) + inject + tpl.substring(head + 6);
     }
 
@@ -254,12 +181,16 @@ public class RefreshService extends Service {
             org.json.JSONObject weather = new org.json.JSONObject(json).optJSONObject("weather");
             if (weather != null) {
                 org.json.JSONObject live = weather.optJSONObject("live");
-                if (live != null && live.has("icon")) codes.add(live.optString("icon"));
+                if (live != null && live.has("icon")) {
+                    codes.add(live.optString("icon"));
+                }
                 org.json.JSONArray fc = weather.optJSONArray("forecast");
                 if (fc != null) {
                     for (int i = 0; i < fc.length(); i++) {
                         org.json.JSONObject d = fc.optJSONObject(i);
-                        if (d != null && d.has("dayicon")) codes.add(d.optString("dayicon"));
+                        if (d != null && d.has("dayicon")) {
+                            codes.add(d.optString("dayicon"));
+                        }
                     }
                 }
             }
@@ -267,16 +198,21 @@ public class RefreshService extends Service {
             StringBuilder sb = new StringBuilder("<script>window.ICON_DATA={");
             boolean first = true;
             for (String c : codes) {
-                if (c == null || c.isEmpty()) continue;
+                if (c == null || c.isEmpty()) {
+                    continue;
+                }
                 try {
                     String svg = readAll(ctx.getAssets().open("template/icons/" + c + ".svg"));
                     String b64 = android.util.Base64.encodeToString(
                             svg.getBytes("UTF-8"), android.util.Base64.NO_WRAP);
-                    if (!first) sb.append(',');
+                    if (!first) {
+                        sb.append(',');
+                    }
                     sb.append('"').append(c)
-                      .append("\":\"data:image/svg+xml;base64,").append(b64).append('"');
+                            .append("\":\"data:image/svg+xml;base64,").append(b64).append('"');
                     first = false;
-                } catch (Throwable ignored) {} // 缺图跳过，模板 onerror 兜底
+                } catch (Throwable ignored) {
+                } // 缺图跳过，模板 onerror 兜底
             }
             sb.append("};</script>");
             return sb.toString();
@@ -301,7 +237,7 @@ public class RefreshService extends Service {
             fos.close();
         }
 
-        File dir = new File(Environment.getExternalStorageDirectory(), "eink_clock");
+        File dir = new File(android.os.Environment.getExternalStorageDirectory(), "eink_clock");
         File dst = new File(dir, "eink_lockscreen_wallpaper.png");
 
         if (tryDirectMove(tmp, dir, dst)) {
@@ -315,21 +251,29 @@ public class RefreshService extends Service {
     /** 直接写入 /sdcard/eink_clock（在正常 ROM 上可行） */
     private boolean tryDirectMove(File tmp, File dir, File dst) {
         try {
-            if (!dir.exists() && !dir.mkdirs()) return false;
+            if (!dir.exists() && !dir.mkdirs()) {
+                return false;
+            }
             File stage = new File(dir, ".wallpaper.tmp");
             FileOutputStream fos = new FileOutputStream(stage);
             try {
                 FileInputStream fin = new FileInputStream(tmp);
                 byte[] buf = new byte[65536];
                 int n;
-                while ((n = fin.read(buf)) > 0) fos.write(buf, 0, n);
+                while ((n = fin.read(buf)) > 0) {
+                    fos.write(buf, 0, n);
+                }
                 fin.close();
                 fos.getFD().sync();
             } finally {
                 fos.close();
             }
-            if (dst.exists() && !dst.delete()) return false;
-            if (!stage.renameTo(dst)) return false;
+            if (dst.exists() && !dst.delete()) {
+                return false;
+            }
+            if (!stage.renameTo(dst)) {
+                return false;
+            }
             tmp.delete();
             return true;
         } catch (Throwable tr) {
@@ -378,5 +322,17 @@ public class RefreshService extends Service {
         } catch (Throwable tr) {
             Log.w(TAG, "写 " + name + " 失败: " + tr);
         }
+    }
+
+    private static String readAll(InputStream in) throws Exception {
+        java.io.InputStreamReader r = new java.io.InputStreamReader(in, "UTF-8");
+        StringBuilder sb = new StringBuilder();
+        char[] buf = new char[8192];
+        int n;
+        while ((n = r.read(buf)) > 0) {
+            sb.append(buf, 0, n);
+        }
+        r.close();
+        return sb.toString();
     }
 }
