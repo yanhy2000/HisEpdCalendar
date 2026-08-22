@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>EpdDeskCalendar Landscape</title>
+<style>
+  /* 海信 A2 Pro 墨水屏横版桌面日历 · 960x540 逻辑布局 @2x → 1920x1080 → 旋转90° 存为 1080x1920
+     布局铺满版：系统迷你钟/解锁条/电池图标均已被 EpdClock 模块 hook 移除，
+     仅右上时间槽需保留（模块 hook 每分钟在其上重画实时 HH:mm，坐标勿动），
+     左上角为本机电池电量（App 渲染时注入 system_info.battery） */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --ink: #1a1a1a;
+    --mid: #3d3d3d;   /* 强调（桌面版红色位） */
+    --gray: #5f5f5f;
+    --light: #8f8f8f;
+    --line: #c2c2c2;
+  }
+  html, body { width: 960px; height: 540px; background: #fff; }
+  body {
+    font-family: "Noto Sans CJK SC", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    color: var(--ink);
+    display: flex;
+    padding: 16px 18px 16px 20px;
+    gap: 24px;
+    position: relative;
+  }
+
+  /* 实时时钟：右上角，与月标题行基线对齐。手机端由模块 hook 每分钟在此区域
+     重画实时 HH:mm（白色矩形+黑字），模板仅作占位回退显示，坐标勿动 */
+  .time-slot {
+    position: absolute; right: 14px; top: 16px;
+    font-size: 34px; font-weight: 700; letter-spacing: 2px; line-height: 1.25;
+  }
+
+  /* 电池电量槽：右下角（黄历 flex 换行也很难到达的位置），图标+百分比 */
+  .battery-slot {
+    position: absolute; right: 20px; bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .batt-icon { position: relative; width: 34px; height: 16px;
+               border: 2.5px solid var(--ink); border-radius: 3px; }
+  .batt-icon::after { /* 电池正极凸头 */
+    content: ''; position: absolute; right: -6.5px; top: 3.5px;
+    width: 4px; height: 5px; background: var(--ink); border-radius: 0 2px 2px 0;
+  }
+  .batt-fill { position: absolute; left: 1.5px; top: 1.5px; bottom: 1.5px;
+               width: 50%; background: var(--ink); border-radius: 1px; }
+  .batt-pct { font-size: 21px; font-weight: 700; }
+  .batt-chg { font-size: 12.5px; color: var(--mid); font-weight: 600; }
+
+  /* ===== 左列：日期 + 天气 + 一言 ===== */
+  .left { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; }
+  .date-row { display: flex; align-items: baseline; gap: 10px; }
+  .date-big { font-size: 52px; font-weight: 700; letter-spacing: 1px; }
+  .weekday { font-size: 24px; font-weight: 700; color: var(--mid); }
+  .sub-row { margin-top: 3px; font-size: 15.5px; color: var(--gray); font-weight: 500; }
+  .sub-row b { color: var(--ink); font-weight: 700; }
+  hr { border: none; border-top: 2.5px solid var(--ink); margin: 9px 0 10px; }
+
+  .wx-top { display: flex; align-items: baseline; justify-content: space-between; }
+  .wx-city { font-size: 15px; color: var(--gray); font-weight: 500; }
+  .wx-temp { font-size: 60px; font-weight: 700; line-height: 1; }
+  .wx-temp small { font-size: 30px; }
+  .wx-main { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .wx-cond { font-size: 25px; font-weight: 600; }
+  .wx-icon { width: 46px; height: 46px; flex-shrink: 0; }
+  .wx-extra { font-size: 15px; color: var(--gray); line-height: 1.55; font-weight: 500; }
+  .wx-forecast { display: flex; gap: 8px; margin-top: 14px; }
+  .wx-fc { flex: 1; border: 1px solid var(--line); border-radius: 6px; padding: 10px 2px 11px; text-align: center; }
+  .wx-fc .d { font-size: 15px; color: var(--gray); }
+  .wx-fc img { width: 26px; height: 26px; margin: 4px 0 1px; }
+  .wx-fc .w { font-size: 16px; font-weight: 600; margin: 4px 0; white-space: nowrap; }
+  .wx-fc .t { font-size: 15.5px; color: var(--mid); font-weight: 600; }
+  #weather { margin-top: 8px; }
+
+  .quote-wrap { margin-top: auto; }
+  .quote { font-size: 19.5px; line-height: 1.6; font-weight: 500; }
+  .quote-src { font-size: 15px; color: var(--gray); text-align: right; margin-top: 5px; font-weight: 500; }
+  .brand { font-size: 10px; color: var(--light); margin-top: 7px; letter-spacing: 1px; }
+
+  /* ===== 分隔线 ===== */
+  .divider { width: 2.5px; background: var(--ink); flex-shrink: 0; }
+
+  /* ===== 右列：日历（铺满剩余空间） ===== */
+  .right { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  /* 月标题加大；农历信息左上角已有，副行整体移除，日历上移扩大 */
+  .cal-head { margin-bottom: 6px; }
+  .cal-head .m { font-size: 34px; font-weight: 700; line-height: 1.25; white-space: nowrap; }
+
+  /* 表头行自适应高度（贴住分割线），数据行均分剩余空间 */
+  .grid { flex: 1; display: grid; grid-template-columns: repeat(7, 1fr);
+          grid-template-rows: auto; grid-auto-rows: 1fr; }
+  .grid.dense .cell .d { font-size: 30px; }
+  .grid.dense .cell .l { font-size: 12px; }
+  .grid.dense .cell { padding-top: 4px; }
+  .gh { text-align: center; font-size: 17px; font-weight: 700; color: var(--gray);
+        border-bottom: 2.5px solid var(--ink); padding: 2px 0 3px; }
+  .gh.we { color: var(--mid); }
+  .cell { position: relative; text-align: center; padding-top: 8px; }
+  .cell.blank { border: none; }
+  .cell .d { font-size: 36px; font-weight: 600; line-height: 1.1; }
+  .cell .l { font-size: 13.5px; color: var(--gray); line-height: 1.35; }
+  .cell .l.jq { color: var(--ink); font-weight: 700; }
+  .cell.we .d { color: var(--mid); font-weight: 700; }
+  .cell.today .d { background: var(--ink); color: #fff; border-radius: 8px;
+                   display: inline-block; min-width: 48px; padding: 1px 6px; }
+  .cell.today .l { color: var(--ink); font-weight: 700; }
+  .badge { position: absolute; top: 3px; left: 2px; font-size: 10.5px; font-weight: 700;
+           border: 1px solid var(--mid); color: var(--mid); border-radius: 3px;
+           padding: 0 2px; line-height: 15px; }
+  .badge.ban { border-color: var(--gray); color: var(--gray); }
+
+  .almanac { border-top: 1.5px solid var(--line); margin-top: 6px; padding-top: 8px;
+             display: flex; flex-wrap: wrap; gap: 5px 16px; font-size: 16px; }
+  .almanac .lbl { color: var(--gray); }
+  .almanac b { font-weight: 700; }
+  .almanac .hl b { color: var(--mid); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+  <div class="battery-slot" id="battery-slot">
+    <span class="batt-icon"><span class="batt-fill" id="batt-fill"></span></span>
+    <span class="batt-pct" id="batt-pct"></span>
+    <span class="batt-chg" id="batt-chg"></span>
+  </div>
+  <div class="time-slot" id="time-slot"></div>
+  <div class="left">
+    <div class="date-row"><span class="date-big" id="date-big"></span><span class="weekday" id="weekday"></span></div>
+    <div class="sub-row" id="sub-row"></div>
+    <hr>
+    <div id="weather">
+      <div class="wx-top"><span class="wx-city" id="wx-city"></span></div>
+      <div class="wx-main">
+        <span class="wx-temp" id="wx-temp"></span>
+        <span class="wx-cond" id="wx-cond"></span>
+        <img class="wx-icon" id="wx-icon" alt="" onerror="this.style.display='none'">
+      </div>
+      <div class="wx-extra" id="wx-extra"></div>
+      <div class="wx-forecast" id="wx-forecast"></div>
+    </div>
+    <div class="quote-wrap">
+      <div class="quote" id="quote"></div>
+      <div class="quote-src" id="quote-src"></div>
+      <div class="brand">EpdDeskCalendar · A2 Pro</div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="right">
+    <div class="cal-head">
+      <div class="m" id="cal-month"></div>
+    </div>
+    <div class="grid" id="cal-grid"></div>
+    <div class="almanac" id="almanac"></div>
+  </div>
+
+<script>
+const data = window.INKSYNC_DATA || {};
+const { weather = {}, calendar = {}, hitokoto = {}, system_info = {} } = data;
+
+/* 手机端：图标以 data-URI 内嵌于 window.ICON_DATA（loadDataWithBaseURL 不放行 file:// 子资源）；
+   PC 预览：无 ICON_DATA，回退相对路径 */
+function iconSrc(code) {
+  return (window.ICON_DATA && window.ICON_DATA[code]) || ('icons/' + code + '.svg');
+}
+
+/* ---- 时钟槽占位（模块激活后由 hook 每分钟重画实时值） ---- */
+(function timeSlot() {
+  document.getElementById('time-slot').textContent = (system_info.time || '00:00');
+})();
+
+/* ---- 电池电量（App 渲染时注入 system_info.battery = {level, charging}） ---- */
+(function battery() {
+  const b = system_info.battery;
+  if (!b || !(b.level >= 0)) { document.getElementById('battery-slot').classList.add('hidden'); return; }
+  const lv = Math.max(0, Math.min(100, b.level));
+  document.getElementById('batt-fill').style.width = 'calc((100% - 3px) * ' + lv / 100 + ')';
+  document.getElementById('batt-pct').textContent = lv + '%';
+  document.getElementById('batt-chg').textContent = b.charging ? '充电中' : '';
+})();
+
+/* ---- 左列头部 ---- */
+(function header() {
+  const m = (system_info.date || '').split('-');
+  document.getElementById('date-big').textContent = m.length === 3
+    ? `${parseInt(m[1])}月${parseInt(m[2])}日` : (system_info.date || '');
+  document.getElementById('weekday').textContent = system_info.weekday || '';
+  document.getElementById('sub-row').innerHTML =
+    (calendar.lunar_month_date ? `农历<b>${calendar.lunar_month_date}</b>` : '') +
+    (calendar.lunar_year_zodiac ? ` · ${calendar.lunar_year_zodiac}` : '');
+})();
+
+/* ---- 天气 ---- */
+(function weatherBlock() {
+  const live = weather.live || {};
+  if (!live.temperature) { document.getElementById('weather').classList.add('hidden'); return; }
+  document.getElementById('wx-city').textContent = weather.city || '';
+  document.getElementById('wx-temp').innerHTML = `${live.temperature}<small>°C</small>`;
+  document.getElementById('wx-cond').textContent = live.weather || '';
+  const icon = document.getElementById('wx-icon');
+  icon.src = iconSrc(live.icon || '999');
+  icon.style.display = '';
+  document.getElementById('wx-extra').textContent =
+    `${live.winddirection}风 ${live.windpower}级 · 湿度 ${live.humidity}%`;
+  document.getElementById('wx-forecast').innerHTML = (weather.forecast || []).slice(1, 4)
+    .map(d => `<div class="wx-fc"><div class="d">${d.week || ''}</div>` +
+              `<img src="${iconSrc(d.dayicon || '999')}" onerror="this.style.display='none'">` +
+              `<div class="w">${d.dayweather || ''}</div>` +
+              `<div class="t">${d.nighttemp}~${d.daytemp}°</div></div>`).join('');
+})();
+
+/* ---- 日历 ---- */
+(function calendarBlock() {
+  document.getElementById('cal-month').textContent = calendar.month_name || '';
+
+  const grid = document.getElementById('cal-grid');
+  const weekendCols = calendar.start_day === 'sunday' ? [0, 6]
+                    : calendar.start_day === 'saturday' ? [0, 1] : [5, 6];
+  (calendar.weekday_headers || []).forEach((h, i) => {
+    const el = document.createElement('div');
+    el.className = 'gh' + (weekendCols.includes(i) ? ' we' : '');
+    el.textContent = h;
+    grid.appendChild(el);
+  });
+  /* 关键：月初空位占位。CSS grid 顺序排格，若不补空格子，1 号会被顶到第一列，
+     月份与星期错位（PC 版模板同样存在此 bug） */
+  const lead = calendar.adjusted_first_day || 0;
+  const days = calendar.days_data || {};
+  const monthDays = calendar.month_days || 0;
+  const dayRows = Math.ceil((lead + monthDays) / 7);
+  if (dayRows > 5) grid.classList.add('dense');
+  for (let i = 0; i < lead; i++) {
+    const blank = document.createElement('div');
+    blank.className = 'cell blank';
+    grid.appendChild(blank);
+  }
+  for (let day = 1; day <= monthDays; day++) {
+    const info = days[String(day)] || {};
+    const col = (day + lead - 1) % 7;
+    const cell = document.createElement('div');
+    cell.className = 'cell'
+      + (weekendCols.includes(col) ? ' we' : '')
+      + (day === calendar.today ? ' today' : '');
+    let badge = '';
+    if (info.badge === 'xiu') badge = '<span class="badge">休</span>';
+    else if (info.badge === 'ban') badge = '<span class="badge ban">班</span>';
+    cell.innerHTML = `${badge}<div class="d">${day}</div>` +
+      (info.lunar ? `<div class="l${info.type === 'jieqi' ? ' jq' : ''}">${info.lunar}</div>` : '');
+    grid.appendChild(cell);
+  }
+})();
+
+/* ---- 黄历 ---- */
+(function almanac() {
+  const parts = [];
+  if ((calendar.today_yi || []).length) parts.push(`<span><span class="lbl">宜</span> <b>${calendar.today_yi.join(' ')}</b></span>`);
+  if ((calendar.today_ji || []).length) parts.push(`<span><span class="lbl">忌</span> <b>${calendar.today_ji.join(' ')}</b></span>`);
+  if (calendar.next_jieqi_name && calendar.next_jieqi_days > 0)
+    parts.push(`<span class="hl"><span class="lbl">距</span> <b>${calendar.next_jieqi_name}</b> ${calendar.next_jieqi_days}天</span>`);
+  if (calendar.next_holiday_name && calendar.next_holiday_days > 0)
+    parts.push(`<span class="hl"><span class="lbl">距</span> <b>${calendar.next_holiday_name}</b> ${calendar.next_holiday_days}天</span>`);
+  document.getElementById('almanac').innerHTML = parts.join('');
+})();
+
+/* ---- 一言 ---- */
+(function quote() {
+  document.getElementById('quote').textContent = hitokoto.hitokoto ? `『${hitokoto.hitokoto}』` : '';
+  document.getElementById('quote-src').textContent =
+    [hitokoto.from_who, hitokoto.from ? `《${hitokoto.from}》` : ''].filter(Boolean).join(' ') || '';
+})();
+</script>
+</body>
+</html>

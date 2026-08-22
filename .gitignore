@@ -1,0 +1,18 @@
+# 构建产物与临时文件
+epdcalendar-app/build/
+tmp/
+
+# 构建工具链（不入库，获取方法见 docs/开发指南.md）
+tools/android-sdk/
+tools/apktool-bin/
+
+# 签名密钥（严禁入库）
+*.keystore
+*.jks
+
+# IDE / 系统文件
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
