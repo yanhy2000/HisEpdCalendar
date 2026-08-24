@@ -5,20 +5,31 @@ import android.content.Context;
 import android.content.Intent;
 import android.util.Log;
 
-/** 重启后闹钟会丢失，开机重新布防；并断言引擎设置（ROM 偶发清空导致画面冻结） */
+/**
+ * 闹钟失联补救点（详见 Manifest intent-filter 注释）：
+ * 开机/时间跳变/应用更新/解锁时重新布防（幂等）。自动刷新关闭时只清场不布防。
+ * 注意：强停态下本接收器收不到任何广播，那条路由引擎侧看门狗兜底。
+ */
 public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
-        Log.i("EpdCal", "开机自启：重新布防刷新闹钟");
-        ScheduleLogic.armNext(context);
-        // su 执行不能在主线程广播里久留
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                if (!Su.flagExists(".calendar_off")) {
-                    Su.assertEngineSettings();
+        String action = intent == null ? "" : String.valueOf(intent.getAction());
+        Log.i("EpdCal", "补救广播 " + action + "：校准刷新闹钟");
+        if (Config.autoRefresh(context)) {
+            ScheduleLogic.armNext(context);
+        } else {
+            ScheduleLogic.cancelAlarm(context);
+        }
+        if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
+            // su 执行不能在主线程广播里久留
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    if (!Su.flagExists(".calendar_off")) {
+                        Su.assertEngineSettings();
+                    }
                 }
-            }
-        }).start();
+            }).start();
+        }
     }
 }

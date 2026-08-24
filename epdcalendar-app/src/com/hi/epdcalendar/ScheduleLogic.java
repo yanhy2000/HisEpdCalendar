@@ -86,6 +86,7 @@ public final class ScheduleLogic {
         PendingIntent pi = PendingIntent.getBroadcast(ctx, 1001, i, PendingIntent.FLAG_UPDATE_CURRENT);
         am.cancel(pi);
         Config.prefs(ctx).edit().putLong("next_at", -1L).apply();
+        Su.writeHealMarker(0); // 无预期，看门狗停手
         Log.i(TAG, "刷新闹钟已取消");
     }
 
@@ -96,6 +97,7 @@ public final class ScheduleLogic {
         if (t < 0) {
             Log.e(TAG, "armNext 失败: pattern=" + pattern + " code=" + t);
             Config.prefs(ctx).edit().putLong("next_at", -1L).apply();
+            Su.writeHealMarker(0); // 布防失败清标记，避免看门狗每小时空拉起
             return t;
         }
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
@@ -103,6 +105,7 @@ public final class ScheduleLogic {
         PendingIntent pi = PendingIntent.getBroadcast(ctx, 1001, i, PendingIntent.FLAG_UPDATE_CURRENT);
         am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, t, pi);
         Config.prefs(ctx).edit().putLong("next_at", t).apply();
+        Su.writeHealMarker(t); // 引擎侧看门狗据此判断闹钟链是否失联
         Log.i(TAG, "已布防下次刷新: " + t + " pattern=" + pattern);
         return t;
     }

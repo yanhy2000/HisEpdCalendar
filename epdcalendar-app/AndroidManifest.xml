@@ -10,6 +10,12 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
 
+    <!-- 自愈入口访问门槛：仅平台签名的锁屏引擎（system 分区应用）可拉起，防第三方滥用 -->
+    <permission
+        android:name="com.hi.epdcalendar.permission.HEAL"
+        android:protectionLevel="signatureOrSystem"
+        android:label="EpdCalendar heal"/>
+
     <!-- 合并版：控制台 App + Xposed 模块一体（模块部分见 assets/xposed_init →
          com.hi.epdclock.EpdClockModule，hook 装载进锁屏引擎与 system_server） -->
     <application
@@ -43,9 +49,24 @@
 
         <receiver android:name=".AlarmReceiver" android:exported="false"/>
 
+        <!-- 看门狗拉起的自愈入口：透明宿主，重新布防+触发刷新后即退 -->
+        <activity
+            android:name=".HealActivity"
+            android:exported="true"
+            android:permission="com.hi.epdcalendar.permission.HEAL"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:noHistory="true"/>
+
+        <!-- 闹钟失联补救点：开机（闹钟全丢）/ 时间与时区跳变（RTC 锚点漂移）/
+             应用更新（进程被杀）/ 每次解锁。布防幂等，重复触发无害 -->
         <receiver android:name=".BootReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.TIME_SET"/>
+                <action android:name="android.intent.action.TIMEZONE_CHANGED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.USER_PRESENT"/>
             </intent-filter>
         </receiver>
 

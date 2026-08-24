@@ -57,4 +57,24 @@ public final class Su {
         return new File(Environment.getExternalStorageDirectory()
                 + "/eink_clock/" + name).exists();
     }
+
+    /**
+     * 看门狗标记：布防闹钟时写入下次预期刷新时刻（epoch ms），取消/布防失败写 0。
+     * 锁屏引擎进程里的看门狗据此判断闹钟链是否失联（详见 com.hi.epdclock.Watchdog）。
+     * 与壁纸同属性（root:sdcard_rw 660）落位保证引擎可读。
+     * 必须异步：armNext 会被主线程（onResume 等）调用，su 不能卡 UI。
+     */
+    public static void writeHealMarker(final long nextMs) {
+        final String dir = "/sdcard/eink_clock";
+        final String v = nextMs > 0 ? String.valueOf(nextMs) : "0";
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                Su.run("echo -n " + v + " > " + dir + "/.next_refresh.tmp"
+                        + " && chown root:sdcard_rw " + dir + "/.next_refresh.tmp"
+                        + " && chmod 660 " + dir + "/.next_refresh.tmp"
+                        + " && mv -f " + dir + "/.next_refresh.tmp " + dir + "/.next_refresh");
+            }
+        }, "EpdCal-marker").start();
+    }
 }

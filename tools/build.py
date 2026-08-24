@@ -106,6 +106,7 @@ def build():
 
     print("[1/7] javac 编译 Xposed API 编译桩（仅编译期，不进 dex）")
     run(["javac", "--release", "8", "-encoding", "UTF-8", "-nowarn",
+         "-cp", AJAR,
          "-d", OUT / "stubs-obj",
          *[str(p) for p in STUBS_SRC.rglob("*.java")]])
     run(["jar", "cf", OUT / "xposed-api-stubs.jar", "-C", OUT / "stubs-obj", "."],
@@ -131,9 +132,9 @@ def build():
     run([AAPT2, "link", "-o", OUT / "unsigned.apk", "-I", AJAR,
          "--manifest", APP / "AndroidManifest.xml", "-A", APP / "assets",
          "--min-sdk-version", "25", "--target-sdk-version", "25",
-         # versionCode 与 versionName 解耦：1.0 → 100（内部码单调递增即可，
+         # versionCode 与 versionName 解耦：1.0.1 → 101（内部码单调递增即可，
          # 避免跨版本线部署时触发 INSTALL_FAILED_VERSION_DOWNGRADE）
-         "--version-code", "100", "--version-name", "1.0"])
+         "--version-code", "101", "--version-name", "1.0.1"])
 
     print("[5/7] 注入 classes.dex")
     run([sys.executable, ROOT / "tools" / "add_dex.py",

@@ -29,6 +29,9 @@ public class WallpaperHook extends XC_MethodReplacement {
 
     @Override
     protected Object replaceHookedMethod(MethodHookParam param) throws Throwable {
+        // 看门狗心跳：引擎每分钟都会走到这里（内部节流，异常自吞）
+        Watchdog.tick();
+
         // 日历模式关闭 → 完整回退原厂绘制
         if (EpdClockModule.calendarOff()) {
             return invokeOriginal(param);
