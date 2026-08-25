@@ -134,7 +134,7 @@ def build():
          "--min-sdk-version", "25", "--target-sdk-version", "25",
          # versionCode 与 versionName 解耦：1.0.1 → 101（内部码单调递增即可，
          # 避免跨版本线部署时触发 INSTALL_FAILED_VERSION_DOWNGRADE）
-         "--version-code", "101", "--version-name", "1.0.1"])
+         "--version-code", "102", "--version-name", "1.0.2"])
 
     print("[5/7] 注入 classes.dex")
     run([sys.executable, ROOT / "tools" / "add_dex.py",

@@ -96,8 +96,8 @@ public class RefreshService extends Service {
                     + (System.currentTimeMillis() - t0) + "ms");
             writeInternal("last_data.json", json);
 
-            // 3. 本地渲染
-            Bitmap portrait = renderBitmap(json);
+            // 3. 本地渲染（开机后立即自愈时 WebView 可能未就绪截出全白页，必须拦截）
+            Bitmap portrait = renderChecked(json);
 
             // 4. 原子写入壁纸
             saveWallpaper(portrait);
@@ -129,6 +129,52 @@ public class RefreshService extends Service {
     }
 
     // ======================== 渲染（经 RenderActivity 宿主） ========================
+
+    /**
+     * 渲染 + 空白守卫：全白页（WebView 未就绪时可能截出）最多重试 3 次，
+     * 仍空白则抛错——流水线判失败不落盘，保住屏幕上的旧画面而非白屏。
+     */
+    private Bitmap renderChecked(String json) throws Exception {
+        for (int i = 1; i <= 3; i++) {
+            Bitmap p = renderBitmap(json);
+            if (!isBlank(p)) {
+                return p;
+            }
+            Log.w(TAG, "渲染结果全白（WebView 未就绪？），丢弃重试 " + i + "/3");
+            p.recycle();
+            if (i < 3) {
+                Thread.sleep(5000);
+            }
+        }
+        throw new IllegalStateException("连续 3 次渲染全白");
+    }
+
+    /** 缩到 54x96 扫描深色像素，全白 = 空白；校验自身失败不拦截输出 */
+    private static boolean isBlank(Bitmap b) {
+        Bitmap t = null;
+        try {
+            t = Bitmap.createScaledBitmap(b, 54, 96, true);
+            int dark = 0;
+            for (int y = 0; y < 96 && dark == 0; y++) {
+                for (int x = 0; x < 54; x++) {
+                    int px = t.getPixel(x, y);
+                    if ((android.graphics.Color.red(px) + android.graphics.Color.green(px)
+                            + android.graphics.Color.blue(px)) / 3 < 128) {
+                        dark++;
+                        break;
+                    }
+                }
+            }
+            return dark == 0;
+        } catch (Throwable tr) {
+            Log.w(TAG, "空白校验异常，放行: " + tr);
+            return false;
+        } finally {
+            if (t != null && t != b) {
+                t.recycle();
+            }
+        }
+    }
 
     /** 拉起渲染宿主 Activity 并等待结果，返回 1920x1080 横版位图 */
     private Bitmap renderBitmap(String json) throws Exception {

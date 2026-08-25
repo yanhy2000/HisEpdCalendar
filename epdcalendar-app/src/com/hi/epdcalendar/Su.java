@@ -47,9 +47,12 @@ public final class Su {
      * 照常触发却全部空转不上屏——画面冻结。刷新/开机/开关日历模式时调用自愈）。
      */
     public static boolean assertEngineSettings() {
-        return ok("settings put global lock_to_wallpaper 1"
+        boolean ok = ok("settings put global lock_to_wallpaper 1"
                 + " && settings put global back_lockscreen_show_time 1"
                 + " && settings put system ink_clock_duration -1");
+        // 顺带自愈电池优化白名单（保精确闹钟与 Doze 下联网不受限），尽力而为
+        run("dumpsys deviceidle whitelist +com.hi.epdcalendar");
+        return ok;
     }
 
     /** 开关标志文件是否存在（root 以 644 创建，普通 uid 可读） */

@@ -20,16 +20,15 @@ public class BootReceiver extends BroadcastReceiver {
         } else {
             ScheduleLogic.cancelAlarm(context);
         }
-        if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
-            // su 执行不能在主线程广播里久留
-            new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    if (!Su.flagExists(".calendar_off")) {
-                        Su.assertEngineSettings();
-                    }
+        // 每次补救顺带自愈引擎设置（ROM 偶发清空导致画面冻结）；
+        // su 执行不能在主线程广播里久留
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                if (!Su.flagExists(".calendar_off")) {
+                    Su.assertEngineSettings();
                 }
-            }).start();
-        }
+            }
+        }).start();
     }
 }
