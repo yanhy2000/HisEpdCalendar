@@ -187,7 +187,7 @@ public class MainActivity extends Activity {
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setTextColor(0xFF263238);
         root.addView(title);
-        TextView subtitle = hint("本地数据源 · v1.0.1");
+        TextView subtitle = hint("本地数据源 · v1.0.2");
         subtitle.setPadding(0, 0, 0, px(10));
         root.addView(subtitle);
 
