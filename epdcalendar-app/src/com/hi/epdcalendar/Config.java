@@ -35,6 +35,11 @@ public final class Config {
         return prefs(ctx).getBoolean("auto_refresh", true);
     }
 
+    /** 调试日志开关（刷新过程写入 /sdcard/eink_clock/debug.log；心跳 .wd_log 常开） */
+    public static boolean debugLog(Context ctx) {
+        return prefs(ctx).getBoolean("debug_log", false);
+    }
+
     public static String pattern(Context ctx) {
         String p = prefs(ctx).getString("pattern", "").trim();
         return p.isEmpty() ? DEFAULT_PATTERN : p;

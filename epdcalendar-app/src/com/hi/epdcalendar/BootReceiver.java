@@ -12,9 +12,9 @@ import android.util.Log;
  */
 public class BootReceiver extends BroadcastReceiver {
     @Override
-    public void onReceive(Context context, Intent intent) {
+    public void onReceive(final Context context, Intent intent) {
         String action = intent == null ? "" : String.valueOf(intent.getAction());
-        Log.i("EpdCal", "补救广播 " + action + "：校准刷新闹钟");
+        DLog.i("补救广播 " + action + "：校准刷新闹钟");
         if (Config.autoRefresh(context)) {
             ScheduleLogic.armNext(context);
         } else {
@@ -28,6 +28,7 @@ public class BootReceiver extends BroadcastReceiver {
                 if (!Su.flagExists(".calendar_off")) {
                     Su.assertEngineSettings();
                 }
+                DLog.flush(context);
             }
         }).start();
     }

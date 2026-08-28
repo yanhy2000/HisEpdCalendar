@@ -92,7 +92,7 @@ public final class ScheduleLogic {
         am.cancel(pi);
         Config.prefs(ctx).edit().putLong("next_at", -1L).apply();
         Su.writeHealMarker(0); // 无预期，看门狗停手
-        Log.i(TAG, "刷新闹钟已取消");
+        DLog.i("刷新闹钟已取消");
     }
 
     /** 读取配置并布防下一次刷新闹钟；返回布防时刻，<0 表示失败 */
@@ -100,7 +100,7 @@ public final class ScheduleLogic {
         String pattern = Config.pattern(ctx);
         long t = nextMatch(pattern, System.currentTimeMillis());
         if (t < 0) {
-            Log.e(TAG, "armNext 失败: pattern=" + pattern + " code=" + t);
+            DLog.e("armNext 失败: pattern=" + pattern + " code=" + t);
             Config.prefs(ctx).edit().putLong("next_at", -1L).apply();
             Su.writeHealMarker(0); // 布防失败清标记，避免看门狗每小时空拉起
             return t;
@@ -111,7 +111,7 @@ public final class ScheduleLogic {
         am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, t, pi);
         Config.prefs(ctx).edit().putLong("next_at", t).apply();
         Su.writeHealMarker(t); // 引擎侧看门狗据此判断闹钟链是否失联
-        Log.i(TAG, "已布防下次刷新: " + t + " pattern=" + pattern);
+        DLog.i("已布防下次刷新: " + t + " pattern=" + pattern);
         return t;
     }
 }

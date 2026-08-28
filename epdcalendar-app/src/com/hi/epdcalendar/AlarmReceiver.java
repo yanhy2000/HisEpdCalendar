@@ -9,7 +9,7 @@ import android.util.Log;
 public class AlarmReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
-        Log.i("EpdCal", "定时刷新闹钟触发");
+        DLog.i("定时刷新闹钟触发");
         context.startService(new Intent(context, RefreshService.class));
     }
 }

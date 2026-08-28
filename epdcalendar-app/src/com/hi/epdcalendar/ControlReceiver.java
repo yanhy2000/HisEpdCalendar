@@ -29,13 +29,18 @@ public class ControlReceiver extends BroadcastReceiver {
             if (pattern != null) {
                 e.putString("pattern", pattern.trim());
             }
+            // 调试日志开关（控制台里也有同名开关）
+            if (intent.hasExtra("debug")) {
+                e.putBoolean("debug_log", intent.getBooleanExtra("debug", false));
+            }
             e.apply();
             long next = ScheduleLogic.armNext(context);
             Log.i("EpdCal", "远程配置已保存 amap_key="
                     + (amapKey == null ? "-" : "***") + " adcode=" + adcode
-                    + " pattern=" + pattern + " next=" + next);
+                    + " pattern=" + pattern + " next=" + next
+                    + " debug=" + intent.getBooleanExtra("debug", Config.debugLog(context)));
         } else if ("com.hi.epdcalendar.ACTION_REFRESH".equals(action)) {
-            Log.i("EpdCal", "远程触发立即刷新");
+            DLog.i("远程触发立即刷新");
             context.startService(new Intent(context, RefreshService.class).putExtra("manual", true));
         }
     }

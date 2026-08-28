@@ -15,22 +15,26 @@ public class HealActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        DLog.i("自愈入口被拉起");
         try {
             if (Config.autoRefresh(this)) {
                 long next = ScheduleLogic.armNext(this);
                 if (next > 0) {
-                    Log.i("EpdCal", "自愈：闹钟重新布防(" + next + ")并触发刷新");
+                    DLog.i("自愈：闹钟重新布防(" + next + ")并触发刷新");
                     startService(new Intent(this, RefreshService.class));
                 } else {
-                    Log.w("EpdCal", "自愈：布防失败(计划非法)，仅清理标记");
+                    DLog.w("自愈：布防失败(计划非法)，仅清理标记");
                     ScheduleLogic.cancelAlarm(this);
+                    DLog.flushAsync(this);
                 }
             } else {
-                Log.i("EpdCal", "自愈：自动刷新已关闭，清理标记退出");
+                DLog.i("自愈：自动刷新已关闭，清理标记退出");
                 ScheduleLogic.cancelAlarm(this);
+                DLog.flushAsync(this);
             }
         } catch (Throwable t) {
-            Log.e("EpdCal", "自愈失败", t);
+            DLog.e("自愈失败: " + t);
+            DLog.flushAsync(this);
         } finally {
             finish();
         }

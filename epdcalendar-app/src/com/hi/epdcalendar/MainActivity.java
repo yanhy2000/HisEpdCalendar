@@ -42,7 +42,7 @@ public class MainActivity extends Activity {
 
     private EditText etKey, etAdcode, etPattern;
     private TextView tvStatus, tvTest;
-    private Switch swCalendar, swAuto;
+    private Switch swCalendar, swAuto, swDebug;
     private RadioGroup rgNet;
     private boolean suppress = true; // 程序化回填控件时不触发保存
     private final Handler handler = new Handler();
@@ -70,6 +70,7 @@ public class MainActivity extends Activity {
         suppress = true;
         swCalendar.setChecked(!Su.flagExists(".calendar_off"));
         swAuto.setChecked(Config.autoRefresh(this));
+        swDebug.setChecked(Config.debugLog(this));
         checkNetModeAvailable();
         suppress = false;
         // HMCT 会拦截开机广播导致重启后闹钟丢失，打开 App 即自愈布防
@@ -186,7 +187,7 @@ public class MainActivity extends Activity {
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setTextColor(0xFF263238);
         root.addView(title);
-        TextView subtitle = hint("本地数据源 · 无需服务端 · v1.0.1");
+        TextView subtitle = hint("本地数据源 · v1.0.1");
         subtitle.setPadding(0, 0, 0, px(10));
         root.addView(subtitle);
 
@@ -238,8 +239,8 @@ public class MainActivity extends Activity {
                 }
             }
         });
-        c1.addView(hint("天气需要高德 Key（? 查看获取方法）；城市自动按 IP 定位，"
-                + "定位不准可手动填 adcode；农历/黄历/一言开箱即用"));
+        c1.addView(hint("天气需要高德 Key（点 ? 查看获取方法）；城市按 IP 自动定位，"
+                + "不准可手动填 adcode；农历、黄历、一言都是内置的"));
         root.addView(c1, cardParams());
 
         // ======== 卡片2：刷新计划 ========
@@ -328,8 +329,8 @@ public class MainActivity extends Activity {
                 }
             }
         });
-        c3.addView(hint("已联网（WiFi/流量）时直接使用现有网络，不会动你的开关；\n"
-                + "未联网时才按上述选择临时开启，刷新完自动关闭（流量需 root）"));
+        c3.addView(hint("已联网时直接用；未联网时按上面的选择临时联网，刷完关闭"
+                + "（流量需 root）"));
         root.addView(c3, cardParams());
 
         // ======== 卡片4：模式 ========
@@ -373,6 +374,24 @@ public class MainActivity extends Activity {
                 }
             }
         });
+
+        swDebug = new Switch(this);
+        swDebug.setText("调试日志");
+        swDebug.setTextSize(TypedValue.COMPLEX_UNIT_PX, px(13));
+        swDebug.setTextColor(0xFF263238);
+        swDebug.setPadding(0, px(8), 0, 0);
+        c4.addView(swDebug);
+        swDebug.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(android.widget.CompoundButton b, boolean on) {
+                if (!suppress) {
+                    Config.prefs(MainActivity.this).edit().putBoolean("debug_log", on).apply();
+                    toast(on ? "调试日志已开启" : "调试日志已关闭");
+                }
+            }
+        });
+        c4.addView(hint("开启后把刷新过程记录到 /sdcard/eink_clock/debug.log\n"
+                + "心跳记录（常开）：/sdcard/eink_clock/.wd_log"));
 
         Button btnWhite = button("刷白墨水屏（长期收纳）", false);
         LinearLayout.LayoutParams lpW = new LinearLayout.LayoutParams(

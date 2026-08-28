@@ -53,7 +53,7 @@ public class RefreshService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (!sRunning.compareAndSet(false, true)) {
-            Log.w(TAG, "已有刷新在进行，忽略本次触发");
+            DLog.w("已有刷新在进行，忽略本次触发");
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -80,19 +80,20 @@ public class RefreshService extends Service {
         boolean ok = false;
         String msg = "";
         NetPolicy.Session net = null;
+        DLog.i(manual ? "手动刷新开始" : "定时刷新开始");
         try {
             // 自愈：ROM 偶发清空锁屏时钟设置会让引擎空转（画面冻结但闹钟仍在跳）
             Su.assertEngineSettings();
 
             // 1. 网络：已联网直接用（不动用户开关）；否则按模式按需开启（用完还原）
             net = NetPolicy.ensureNetwork(this);
-            Log.i(TAG, "网络就绪");
+            DLog.i("网络就绪");
 
             // 2. 本地数据组装（天气/一言需联网；农历全本地）
             long t0 = System.currentTimeMillis();
             JSONObject data = DataProvider.build(this);
             String json = data.toString();
-            Log.i(TAG, "数据组装完成 " + json.length() + "B，耗时 "
+            DLog.i("数据组装完成 " + json.length() + "B，耗时 "
                     + (System.currentTimeMillis() - t0) + "ms");
             writeInternal("last_data.json", json);
 
@@ -106,21 +107,23 @@ public class RefreshService extends Service {
             ok = true;
             msg = "成功";
         } catch (Throwable tr) {
-            Log.e(TAG, "刷新失败", tr);
+            DLog.e("刷新失败: " + tr);
             msg = String.valueOf(tr);
         } finally {
             // 5. 还原网络现场、记录结果、布防下一轮
             try {
                 NetPolicy.restore(this, net);
             } catch (Throwable tr) {
-                Log.w(TAG, "网络还原失败: " + tr);
+                DLog.w("网络还原失败: " + tr);
             }
             Config.recordResult(this, ok, msg);
             if (Config.autoRefresh(this)) {
                 ScheduleLogic.armNext(this);
             } else if (!manual) {
-                Log.i(TAG, "自动刷新已关闭，不布防下一轮");
+                DLog.i("自动刷新已关闭，不布防下一轮");
             }
+            DLog.i(ok ? "刷新完成：" + msg : "刷新失败：" + msg);
+            DLog.flush(this);
             if (wl != null && wl.isHeld()) {
                 wl.release();
             }
@@ -142,7 +145,7 @@ public class RefreshService extends Service {
             if (!isBlank(p)) {
                 return p;
             }
-            Log.w(TAG, "渲染结果全白（WebView 未就绪？），丢弃重试 " + i + "/" + waits.length);
+            DLog.w("渲染结果全白（WebView 未就绪？），丢弃重试 " + i + "/" + waits.length);
             p.recycle();
             if (i < waits.length) {
                 Thread.sleep(waits[i]);
@@ -169,7 +172,7 @@ public class RefreshService extends Service {
             }
             return dark == 0;
         } catch (Throwable tr) {
-            Log.w(TAG, "空白校验异常，放行: " + tr);
+            DLog.w("空白校验异常，放行: " + tr);
             return false;
         } finally {
             if (t != null && t != b) {
@@ -203,7 +206,7 @@ public class RefreshService extends Service {
         if (portrait != land) {
             land.recycle();
         }
-        Log.i(TAG, "渲染完成 " + portrait.getWidth() + "x" + portrait.getHeight());
+        DLog.i("渲染完成 " + portrait.getWidth() + "x" + portrait.getHeight());
         return portrait;
     }
 
@@ -265,7 +268,7 @@ public class RefreshService extends Service {
             sb.append("};</script>");
             return sb.toString();
         } catch (Throwable t) {
-            Log.w(TAG, "图标内嵌失败: " + t);
+            DLog.w("图标内嵌失败: " + t);
             return "";
         }
     }
@@ -289,11 +292,11 @@ public class RefreshService extends Service {
         File dst = new File(dir, "eink_lockscreen_wallpaper.png");
 
         if (tryDirectMove(tmp, dir, dst)) {
-            Log.i(TAG, "壁纸直写成功 " + dst);
+            DLog.i("壁纸直写成功 " + dst);
             return;
         }
         suMove(tmp, dir, dst);
-        Log.i(TAG, "壁纸经 su 落位 " + dst + " (" + dst.length() + "B)");
+        DLog.i("壁纸经 su 落位 " + dst + " (" + dst.length() + "B)");
     }
 
     /** 直接写入 /sdcard/eink_clock（在正常 ROM 上可行） */
@@ -325,7 +328,7 @@ public class RefreshService extends Service {
             tmp.delete();
             return true;
         } catch (Throwable tr) {
-            Log.w(TAG, "直写失败，改用 su: " + tr);
+            DLog.w("直写失败，改用 su: " + tr);
             return false;
         }
     }
@@ -368,7 +371,7 @@ public class RefreshService extends Service {
             fos.write(content.getBytes("UTF-8"));
             fos.close();
         } catch (Throwable tr) {
-            Log.w(TAG, "写 " + name + " 失败: " + tr);
+            DLog.w("写 " + name + " 失败: " + tr);
         }
     }
 

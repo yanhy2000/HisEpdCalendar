@@ -49,7 +49,7 @@ public final class DataProvider {
                 root.put("weather", w);
             }
         } catch (Throwable t) {
-            Log.w(TAG, "天气获取失败（本次无天气块）: " + t);
+            DLog.w("天气获取失败（本次无天气块）: " + t);
         }
         root.put("hitokoto", hitokoto(ctx));
         root.put("calendar", calendar());
@@ -125,7 +125,7 @@ public final class DataProvider {
             fos.write(content.getBytes("UTF-8"));
             fos.close();
         } catch (Throwable t) {
-            Log.w(TAG, "写缓存失败 " + name + ": " + t);
+            DLog.w("写缓存失败 " + name + ": " + t);
         }
     }
 
@@ -152,7 +152,7 @@ public final class DataProvider {
     private static JSONObject weather(Context ctx) throws Exception {
         String key = Config.amapKey(ctx);
         if (key.isEmpty()) {
-            Log.i(TAG, "未配置高德 Key，跳过天气");
+            DLog.i("未配置高德 Key，跳过天气");
             return null;
         }
         String adcode = Config.adcode(ctx);
@@ -160,7 +160,7 @@ public final class DataProvider {
             adcode = autoAdcode(ctx, key); // 留空 = 按请求 IP 自动定位
         }
         if (adcode == null || adcode.isEmpty()) {
-            Log.w(TAG, "城市代码未定（自动定位失败且未手动填写），跳过天气");
+            DLog.w("城市代码未定（自动定位失败且未手动填写），跳过天气");
             return null;
         }
 
@@ -216,11 +216,11 @@ public final class DataProvider {
                 }
             }
         } catch (Exception e) {
-            Log.w(TAG, "高德请求失败: " + e);
+            DLog.w("高德请求失败: " + e);
         }
 
         if (live == null && cachedData != null) {
-            Log.i(TAG, "天气请求失败，回退旧缓存");
+            DLog.i("天气请求失败，回退旧缓存");
             return cachedData;
         }
         if (live == null) {
@@ -277,12 +277,12 @@ public final class DataProvider {
                 c.put("time", System.currentTimeMillis());
                 c.put("adcode", v);
                 writeCache(ctx, "ip_adcode.json", c.toString());
-                Log.i(TAG, "IP 定位城市成功 adcode=" + v + " province=" + r.optString("province"));
+                DLog.i("IP 定位城市成功 adcode=" + v + " province=" + r.optString("province"));
                 return v;
             }
-            Log.w(TAG, "IP 定位失败: " + r);
+            DLog.w("IP 定位失败: " + r);
         } catch (Throwable t) {
-            Log.w(TAG, "IP 定位异常: " + t);
+            DLog.w("IP 定位异常: " + t);
         }
         return "";
     }
@@ -309,7 +309,7 @@ public final class DataProvider {
             out.put("from_who", j.isNull("from_who") ? "" : j.optString("from_who", ""));
             writeCache(ctx, "hitokoto_cache.json", out.toString());
         } catch (Throwable t) {
-            Log.w(TAG, "一言获取失败: " + t);
+            DLog.w("一言获取失败: " + t);
             String cached = readCache(ctx, "hitokoto_cache.json");
             try {
                 if (cached != null) {

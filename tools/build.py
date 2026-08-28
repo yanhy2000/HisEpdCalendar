@@ -135,8 +135,8 @@ def build():
          # 版本策略：versionName 只随特性版本推进（1.0 → 1.1…），纯 bug 修复
          # 保持不变（同号覆盖安装可行）；versionCode 单调不减即可，避免跨
          # 版本线部署时触发 INSTALL_FAILED_VERSION_DOWNGRADE。
-         # v1.0.1（code 105）= 1.0 之后全部修复的合并发行版
-         "--version-code", "105", "--version-name", "1.0.1"])
+         # v1.0.1（code 106）= 1.0 之后全部修复 + 调试日志开关的合并发行版
+         "--version-code", "106", "--version-name", "1.0.1"])
 
     print("[5/7] 注入 classes.dex")
     run([sys.executable, ROOT / "tools" / "add_dex.py",
