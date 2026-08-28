@@ -132,9 +132,11 @@ def build():
     run([AAPT2, "link", "-o", OUT / "unsigned.apk", "-I", AJAR,
          "--manifest", APP / "AndroidManifest.xml", "-A", APP / "assets",
          "--min-sdk-version", "25", "--target-sdk-version", "25",
-         # versionCode 与 versionName 解耦：1.0.1 → 101（内部码单调递增即可，
-         # 避免跨版本线部署时触发 INSTALL_FAILED_VERSION_DOWNGRADE）
-         "--version-code", "102", "--version-name", "1.0.2"])
+         # 版本策略：versionName 只随特性版本推进（1.0 → 1.1…），纯 bug 修复
+         # 保持不变（同号覆盖安装可行）；versionCode 单调不减即可，避免跨
+         # 版本线部署时触发 INSTALL_FAILED_VERSION_DOWNGRADE。
+         # v1.0.1（code 105）= 1.0 之后全部修复的合并发行版
+         "--version-code", "105", "--version-name", "1.0.1"])
 
     print("[5/7] 注入 classes.dex")
     run([sys.executable, ROOT / "tools" / "add_dex.py",

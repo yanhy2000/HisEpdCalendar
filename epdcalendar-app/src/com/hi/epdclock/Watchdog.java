@@ -16,29 +16,34 @@ import de.robv.android.xposed.XposedBridge;
  * 停摆而停跳——夜里恰是最需要看门狗的时候。v1.0.2 起双保险：
  *
  * 1) 主动保险闹钟：每次心跳用引擎身份（system uid，App 被强停清闹钟
- *    牵连不到；AllowWhileIdle 深睡照发）向 AlarmManager 布防一个
- *    PendingIntent.getActivity(HealActivity)，目标 = 标记+45 分钟。
- *    到期由系统直接拉起自愈——不需要引擎在跑、不走广播（会被丢弃）。
+ *    牵连不到）向 AlarmManager 布防 PendingIntent.getActivity(HealActivity)，
+ *    目标 = 标记+20 分钟。v1.0.3 起用 setAlarmClock 用户级——真机实证
+ *    本机 ROM 夜间深睡连 setExactAndAllowWhileIdle 都敢吞（连续两夜
+ *    8:45 保险未开火、统计零记录），但厂商绝不敢吞用户级闹钟（否则
+ *    用户的真闹钟不响）。
  * 2) 被动心跳兜底：心跳时发现标记已过期仍直接拉起（覆盖引擎闹钟也被
  *    清的极端情况，如重启后 BootReceiver 被拦）。
  *
  * 标记：App 布防闹钟时写入 /sdcard/eink_clock/.next_refresh（下次预期
  * 刷新时刻，root:sdcard_rw 660 与壁纸同属性）。缺失/0 = 无预期，不干预。
- * 另写 .wd_beat 心跳诊断文件（下次事故可判断守门员当时是否在跳）。
+ * 追加式心跳日志 .wd_log（时刻 标记 保险闹钟目标，5 分钟一行，48KB 轮转）
+ * ——下次事故可直接还原整夜时间线。
  */
 final class Watchdog {
     private static final String MARKER = "/sdcard/eink_clock/.next_refresh";
-    private static final String BEAT = "/sdcard/eink_clock/.wd_beat";
+    private static final String WDLOG = "/sdcard/eink_clock/.wd_log";
     private static final String HEAL_PKG = "com.hi.epdcalendar";
     private static final String HEAL_CLS = "com.hi.epdcalendar.HealActivity";
     private static final long CHECK_INTERVAL_MS = 5L * 60 * 1000;    // 真正检查的节流
-    private static final long GRACE_MS = 45L * 60 * 1000;            // 预期时刻宽限
+    private static final long GRACE_MS = 20L * 60 * 1000;            // 主闹钟正常只晚数秒，宽限给足补刷时效
     private static final long LAUNCH_COOLDOWN_MS = 60L * 60 * 1000;  // 主动拉起冷却
 
     private static long sLastCheck;
     private static long sLastLaunch;
     private static boolean sBroken;        // 自愈目标已卸载，停用免空转
     private static PendingIntent sFailSafe;
+    private static PendingIntent sShowPi;
+    private static long sLastArmedAt = -1; // 上次保险闹钟目标（变更才记日志）
 
     private Watchdog() {}
 
@@ -51,8 +56,8 @@ final class Watchdog {
             }
             sLastCheck = now;
             long next = readMarker();
-            writeBeat(now);
-            maintainFailSafeAlarm(next);
+            long fs = maintainFailSafeAlarm(next);
+            writeLog(now, next, fs);
             if (next <= 0 || now < next + GRACE_MS) {
                 return;
             }
@@ -62,23 +67,46 @@ final class Watchdog {
         }
     }
 
-    /** 引擎身份布防/撤销保险闹钟：到期系统直接拉起 HealActivity（不依赖引擎运行） */
-    private static void maintainFailSafeAlarm(long next) {
-        android.content.Context ctx = appContext();
-        if (ctx == null) {
-            return;
-        }
-        AlarmManager am = (AlarmManager) ctx.getSystemService(android.content.Context.ALARM_SERVICE);
-        if (sFailSafe == null) {
-            android.content.Intent i = new android.content.Intent();
-            i.setClassName(HEAL_PKG, HEAL_CLS);
-            i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
-            sFailSafe = PendingIntent.getActivity(ctx, 1002, i, PendingIntent.FLAG_UPDATE_CURRENT);
-        }
-        if (next > 0) {
-            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next + GRACE_MS, sFailSafe);
-        } else {
+    /**
+     * 引擎身份布防/撤销保险闹钟：到期系统直接拉起 HealActivity（不依赖引擎运行）。
+     * setAlarmClock 用户级：本机 ROM 夜间会吞 AllowWhileIdle 精确闹钟（实证），
+     * 但绝不会吞用户级闹钟。返回当前布防时刻（未布防为 -1）。
+     */
+    private static long maintainFailSafeAlarm(long next) {
+        try {
+            android.content.Context ctx = appContext();
+            if (ctx == null) {
+                return sLastArmedAt;
+            }
+            AlarmManager am = (AlarmManager) ctx.getSystemService(android.content.Context.ALARM_SERVICE);
+            if (sFailSafe == null) {
+                android.content.Intent i = new android.content.Intent();
+                i.setClassName(HEAL_PKG, HEAL_CLS);
+                i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                sFailSafe = PendingIntent.getActivity(ctx, 1002, i, PendingIntent.FLAG_UPDATE_CURRENT);
+            }
+            if (next > 0) {
+                long at = next + GRACE_MS;
+                if (sShowPi == null) {
+                    // 状态栏闹钟图标的点击目标（主 LCD 才会显示，无实际影响）
+                    android.content.Intent si = new android.content.Intent();
+                    si.setClassName(HEAL_PKG, HEAL_PKG + ".MainActivity");
+                    si.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                    sShowPi = PendingIntent.getActivity(ctx, 1003, si, PendingIntent.FLAG_UPDATE_CURRENT);
+                }
+                am.setAlarmClock(new AlarmManager.AlarmClockInfo(at, sShowPi), sFailSafe);
+                if (at != sLastArmedAt) {
+                    sLastArmedAt = at;
+                    XposedBridge.log("EpdCal 看门狗：用户级保险闹钟布防 " + at);
+                }
+                return at;
+            }
             am.cancel(sFailSafe);
+            sLastArmedAt = -1;
+            return -1;
+        } catch (Throwable t) {
+            XposedBridge.log("EpdCal 看门狗：保险闹钟布防失败: " + t);
+            return sLastArmedAt;
         }
     }
 
@@ -108,12 +136,16 @@ final class Watchdog {
         }
     }
 
-    /** 心跳诊断文件（诊断系统 uid 可写 FUSE；失败静默） */
-    private static void writeBeat(long now) {
+    /** 追加式心跳日志：时刻 标记 保险闹钟目标（5 分钟一行；48KB 轮转；写失败静默） */
+    private static void writeLog(long now, long marker, long fs) {
         FileOutputStream fos = null;
         try {
-            fos = new FileOutputStream(BEAT);
-            fos.write(String.valueOf(now).getBytes());
+            File f = new File(WDLOG);
+            if (f.length() > 48L * 1024) {
+                f.delete();
+            }
+            fos = new FileOutputStream(f, true);
+            fos.write((now + " " + marker + " " + fs + "\n").getBytes());
         } catch (Throwable ignored) {
         } finally {
             if (fos != null) {

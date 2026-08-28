@@ -186,7 +186,7 @@ public class MainActivity extends Activity {
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setTextColor(0xFF263238);
         root.addView(title);
-        TextView subtitle = hint("本地数据源 · 无需服务端 · v1.0");
+        TextView subtitle = hint("本地数据源 · 无需服务端 · v1.0.1");
         subtitle.setPadding(0, 0, 0, px(10));
         root.addView(subtitle);
 
@@ -246,7 +246,7 @@ public class MainActivity extends Activity {
         LinearLayout c2 = card();
         c2.addView(sectionTitle("刷新计划"));
 
-        c2.addView(label("刷新正则（对 HH:mm 逐分钟匹配）"));
+        c2.addView(label("刷新正则（对 HH:mm 逐分钟匹配，8:00 与 08:00 等效）"));
         LinearLayout rowPat = new LinearLayout(this);
         rowPat.setOrientation(LinearLayout.HORIZONTAL);
         rowPat.setGravity(Gravity.CENTER_VERTICAL);

@@ -131,22 +131,24 @@ public class RefreshService extends Service {
     // ======================== 渲染（经 RenderActivity 宿主） ========================
 
     /**
-     * 渲染 + 空白守卫：全白页（WebView 未就绪时可能截出）最多重试 3 次，
-     * 仍空白则抛错——流水线判失败不落盘，保住屏幕上的旧画面而非白屏。
+     * 渲染 + 空白守卫：全白页（WebView 未就绪时可能截出，真机实证开机后
+     * 约 15 分钟内高发）重试间隔递增 5/15/30/60 秒，仍空白则抛错——
+     * 流水线判失败不落盘，保住屏幕上的旧画面而非白屏，闹钟链照常续排。
      */
     private Bitmap renderChecked(String json) throws Exception {
-        for (int i = 1; i <= 3; i++) {
+        int[] waits = {5000, 15000, 30000, 60000};
+        for (int i = 0; i <= waits.length; i++) {
             Bitmap p = renderBitmap(json);
             if (!isBlank(p)) {
                 return p;
             }
-            Log.w(TAG, "渲染结果全白（WebView 未就绪？），丢弃重试 " + i + "/3");
+            Log.w(TAG, "渲染结果全白（WebView 未就绪？），丢弃重试 " + i + "/" + waits.length);
             p.recycle();
-            if (i < 3) {
-                Thread.sleep(5000);
+            if (i < waits.length) {
+                Thread.sleep(waits[i]);
             }
         }
-        throw new IllegalStateException("连续 3 次渲染全白");
+        throw new IllegalStateException("连续 " + (waits.length + 1) + " 次渲染全白");
     }
 
     /** 缩到 54x96 扫描深色像素，全白 = 空白；校验自身失败不拦截输出 */

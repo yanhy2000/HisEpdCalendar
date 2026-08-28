@@ -15,9 +15,10 @@ import java.util.regex.PatternSyntaxException;
 /**
  * 刷新计划：正则匹配 "HH:mm"（24 小时制，每分钟一个候选点）。
  * 从给定时刻之后的第一分钟起逐分钟向后扫描，找到第一个匹配的 HH:mm 即为下次刷新时间。
+ * 同一时刻同时尝试 "08:00" 与 "8:00" 两种写法，^8:00$ 与 ^08:00$ 等效。
  *
  * 示例：
- *   ^07:30$                       每天 07:30
+ *   ^7:30$ / ^07:30$              每天 07:30
  *   ^(0|3|6|9|12|15|18|21):00$    每逢 3 小时整点
  *   ^08:[03]0$                    08:00 与 08:30
  *   ^\d\d:00$                     每小时整点
@@ -56,9 +57,13 @@ public final class ScheduleLogic {
         c.add(Calendar.MINUTE, 1);
         long limit = afterMs + SCAN_WINDOW_MS;
         while (c.getTimeInMillis() <= limit) {
-            String hhmm = String.format("%02d:%02d",
-                    c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE));
-            if (p.matcher(hhmm).matches()) {
+            // 双形式匹配：真机事故实证 ^(8|13|17):00$ 因前导零永远匹配不上
+            // "08:00"——用户以为设了早 8 点，实则四天"夜间失刷"全因此从未排过
+            // 8 点档。同一分钟两种写法任一命中即算匹配。
+            int h = c.get(Calendar.HOUR_OF_DAY);
+            String mm = String.format("%02d", c.get(Calendar.MINUTE));
+            if (p.matcher(String.format("%02d:%02d", h, c.get(Calendar.MINUTE))).matches()
+                    || p.matcher(h + ":" + mm).matches()) {
                 return c.getTimeInMillis();
             }
             c.add(Calendar.MINUTE, 1);
